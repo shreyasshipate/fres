@@ -1,0 +1,406 @@
+1. AuthenticationEntryPoint.java
+
+
+
+package com.example.project;
+
+
+
+import java.io.IOException;
+
+import java.io.PrintWriter;
+
+
+
+import javax.servlet.ServletException;
+
+import javax.servlet.http.HttpServletRequest;
+
+import javax.servlet.http.HttpServletResponse;
+
+
+
+import org.springframework.security.core.AuthenticationException;
+
+import org.springframework.security.web.authentication.www.BasicAuthenticationEntryPoint;
+
+import org.springframework.stereotype.Component;
+
+
+
+@Component
+
+public class AuthenticationEntryPoint extends BasicAuthenticationEntryPoint {
+
+
+
+@Override
+
+    public void commence(HttpServletRequest request, HttpServletResponse response, AuthenticationException authEx)
+
+      throws IOException, ServletException {
+
+        response.addHeader("LoginUser", "Basic " +getRealmName());
+
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
+        PrintWriter writer = response.getWriter();
+
+        writer.println("HTTP Status 401 - " + authEx.getMessage());
+
+    }
+
+	@Override
+
+    public void afterPropertiesSet() throws Exception {
+
+        setRealmName("springboot");
+
+        super.afterPropertiesSet();
+
+   }
+
+
+
+}
+
+
+
+2. News.Java
+
+
+
+package com.example.project;
+
+import com.example.project.Results;
+
+
+
+public class News {
+
+
+
+	private String section;
+
+    private Results[] results;
+
+    private String title;
+
+
+
+
+
+    public Results[] getResults() {
+
+        return results;
+
+    }
+
+
+
+    public void setResults(Results[] results) {
+
+        this.results = results;
+
+    }
+
+
+
+    public String getSection() {
+
+        return section;
+
+    }
+
+
+
+    public void setSection(String section) {
+
+        this.section = section;
+
+    }
+
+
+
+    public String getTitle() {
+
+        return title;
+
+    }
+
+    public void setTitle(String title) {
+
+        this.title = title;
+
+    }	
+
+	
+
+}
+
+
+
+
+
+3. NewsController.java
+
+
+
+package com.example.project;
+
+
+
+import org.springframework.beans.factory.annotation.Autowired;
+
+import org.springframework.web.bind.annotation.RequestMapping;
+
+import org.springframework.web.bind.annotation.RequestMethod;
+
+import org.springframework.web.bind.annotation.RestController;
+
+
+
+@RestController
+
+@RequestMapping("/api")
+
+public class NewsController {
+
+
+
+@Autowired
+
+NewsService newsService;
+
+
+
+@RequestMapping(value = "/news/topstories", method = RequestMethod.GET)
+
+public News getNews() throws Exception {
+
+    return newsService.getTopStories();
+
+}
+
+
+
+}
+
+
+
+
+
+4. Results.java
+
+
+
+package com.example.project;
+
+
+
+public class Results{
+
+	
+
+  private String title;
+
+
+
+  public String getTitle() {
+
+      return title;
+
+  }
+
+  public void setTitle(String title) {
+
+      this.title = title;
+
+  }
+
+}
+
+
+
+
+
+5.SpringSecurityConfig.java
+
+
+
+package com.example.project;
+
+
+
+import org.springframework.beans.factory.annotation.Autowired;
+
+import org.springframework.context.annotation.Configuration;
+
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+
+
+
+@Configuration
+
+@EnableWebSecurity
+
+public class SpringSecurityConfig extends WebSecurityConfigurerAdapter {
+
+  @Autowired
+
+	private AuthenticationEntryPoint authEntryPoint;
+
+	@Override
+
+	protected void configure(HttpSecurity http) throws Exception {
+
+		http.csrf().disable().authorizeRequests()
+
+			.anyRequest().authenticated()
+
+				.and().httpBasic()
+
+				.authenticationEntryPoint(authEntryPoint);
+
+	}
+
+	@Autowired
+
+	public void configureGlobal(AuthenticationManagerBuilder auth) throws Exception {
+
+auth.inMemoryAuthentication().withUser("username").password("password").roles("USER");
+
+	}
+
+}
+
+
+
+
+
+6. NewsService.java
+
+
+
+package com.example.project;
+
+
+
+import java.util.ArrayList;
+
+import java.util.List;
+
+import java.util.Map;
+
+
+
+import org.json.JSONArray;
+
+import org.json.JSONObject;
+
+import org.springframework.http.HttpEntity;
+
+import org.springframework.http.HttpHeaders;
+
+import org.springframework.http.HttpMethod;
+
+import org.springframework.http.HttpStatus;
+
+import org.springframework.http.MediaType;
+
+import org.springframework.http.ResponseEntity;
+
+import org.springframework.stereotype.Service;
+
+import org.springframework.web.client.RestTemplate;
+
+
+
+@Service 
+
+public class NewsService {
+
+
+
+	private String apiKey = "gIIWu7P82GBslJAd0MUSbKMrOaqHjWOo";
+
+	private RestTemplate restTemplate = new RestTemplate();
+
+	private JSONObject jsonObject;
+
+	private JSONArray jsonArray;
+
+	private Results[] resultsArray;
+
+	private News news=new News();
+
+	
+
+	public News getTopStories() throws Exception {
+
+	
+
+		List<News> topNewsStories = new ArrayList<>();
+
+	    String Url = "https://api.nytimes.com/svc/topstories/v2/home.json?api-key=" + apiKey;
+
+	
+
+	    HttpHeaders headers = new HttpHeaders();
+
+	    headers.setContentType(MediaType.APPLICATION_JSON);
+
+	    HttpEntity entity = new HttpEntity(headers);
+
+	    
+
+	    ResponseEntity<Map> newsList = restTemplate.exchange(Url, HttpMethod.GET, entity, Map.class);
+
+	
+
+        if (newsList.getStatusCode() == HttpStatus.OK) {
+
+
+
+            jsonObject = new JSONObject(newsList.getBody());
+
+            jsonArray = jsonObject.getJSONArray("results");
+
+            resultsArray = new Results[jsonArray.length()];
+
+            
+
+            for(int i=0; i<jsonArray.length(); i++) {
+
+                news.setTitle(jsonArray.getJSONObject(i).get("title").toString());
+
+                news.setSection(jsonArray.getJSONObject(i).get("section").toString());
+
+                resultsArray[i]=new Results();
+
+                resultsArray[i].setTitle(jsonArray.getJSONObject(i).get("title").toString());
+
+                news.setResults(resultsArray);
+
+                topNewsStories.add(news);
+
+            }
+
+
+
+        }
+
+        return topNewsStories.get(0);
+
+}
+
+
+
+}
+
