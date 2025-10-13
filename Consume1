@@ -1,0 +1,535 @@
+AuthenticationEntryPoint.java
+
+
+
+package com.example.project;
+
+
+
+import java.io.IOException;
+
+import java.io.PrintWriter;
+
+
+
+import javax.servlet.ServletException;
+
+import javax.servlet.http.HttpServletRequest;
+
+import javax.servlet.http.HttpServletResponse;
+
+
+
+import org.springframework.security.core.AuthenticationException;
+
+import org.springframework.security.web.authentication.www.BasicAuthenticationEntryPoint;
+
+import org.springframework.stereotype.Component;
+
+
+
+@Component
+
+public class AuthenticationEntryPoint extends BasicAuthenticationEntryPoint {
+
+
+
+@Override
+
+    public void commence(HttpServletRequest request, HttpServletResponse response, AuthenticationException authEx)
+
+      throws IOException, ServletException {
+
+        response.addHeader("LoginUser", "Basic " +getRealmName());
+
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
+        PrintWriter writer = response.getWriter();
+
+        writer.println("HTTP Status 401 - " + authEx.getMessage());
+
+    }
+
+	@Override
+
+    public void afterPropertiesSet() throws Exception {
+
+        setRealmName("springboot");
+
+        super.afterPropertiesSet();
+
+   }
+
+
+
+}
+
+
+
+
+
+2..SpringSecurityConfig.java
+
+
+
+package com.example.project;
+
+
+
+import org.springframework.beans.factory.annotation.Autowired;
+
+import org.springframework.context.annotation.Configuration;
+
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+
+
+
+@Configuration
+
+@EnableWebSecurity
+
+public class SpringSecurityConfig extends WebSecurityConfigurerAdapter {
+
+  @Autowired
+
+	private AuthenticationEntryPoint authEntryPoint;
+
+	@Override
+
+	protected void configure(HttpSecurity http) throws Exception {
+
+		http.csrf().disable().authorizeRequests()
+
+			.anyRequest().authenticated()
+
+				.and().httpBasic()
+
+				.authenticationEntryPoint(authEntryPoint);
+
+	}
+
+	@Autowired
+
+	public void configureGlobal(AuthenticationManagerBuilder auth) throws Exception {
+
+auth.inMemoryAuthentication().withUser("username").password("password").roles("USER");
+
+	}
+
+}
+
+
+
+HospitalController.java
+
+package com.example.project;
+
+
+
+import java.util.List;
+
+
+
+import org.springframework.beans.factory.annotation.Autowired;
+
+import org.springframework.http.HttpStatus;
+
+import org.springframework.http.ResponseEntity;
+
+import org.springframework.web.bind.annotation.DeleteMapping;
+
+import org.springframework.web.bind.annotation.GetMapping;
+
+import org.springframework.web.bind.annotation.PathVariable;
+
+import org.springframework.web.bind.annotation.PostMapping;
+
+import org.springframework.web.bind.annotation.PutMapping;
+
+import org.springframework.web.bind.annotation.RequestBody;
+
+import org.springframework.web.bind.annotation.RequestMapping;
+
+import org.springframework.web.bind.annotation.RequestMethod;
+
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import org.springframework.web.bind.annotation.RestController;
+
+
+
+
+
+
+
+
+
+@RestController
+
+@RequestMapping("/test/")
+
+public class HospitalController {
+
+
+
+    @Autowired
+
+    private HospitalService hospitalService;
+
+
+
+@GetMapping("hospitals/{id}")
+
+public @ResponseBody Hospital getHospital(@PathVariable("id") int id) throws Exception {
+
+ return hospitalService.getHospital(id);
+
+
+
+
+
+    }
+
+
+
+@GetMapping("hospitals/")
+
+public @ResponseBody List<Hospital> getAllHospitals() throws Exception {
+
+return hospitalService.getAllHospitals();
+
+
+
+    }
+
+
+
+
+
+@PostMapping("hospitals/")
+
+public ResponseEntity<String> addHospital(@RequestBody Hospital hospital  ) {
+
+hospitalService.addHospital(hospital);
+
+//URI location=ServletUriComponentsBuilder.fromCurrentRequest().path("/{id}").buildAndExpand(sevedUser.getId()).toUri();
+
+return new ResponseEntity<>(HttpStatus.OK);
+
+}
+
+
+
+
+
+public ResponseEntity<String> updateHospital(@RequestBody Hospital hospital) {
+
+hospitalService.updateHospital(hospital);
+
+
+
+    return ResponseEntity.ok("ok");
+
+}
+
+
+
+@DeleteMapping("hospitals/")
+
+public ResponseEntity<String> deleteHospital(@RequestBody Hospital hospital) {
+
+hospitalService.deleteHospital(hospital);
+
+    return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+
+}
+
+
+
+}
+
+HospitalService.java
+
+package com.example.project;
+
+
+
+
+
+import java.util.ArrayList;
+
+import java.util.Arrays;
+
+import java.util.List;
+
+
+
+import org.springframework.beans.factory.annotation.Autowired;
+
+import org.springframework.stereotype.Service;
+
+
+
+
+
+
+
+@Service
+
+public class HospitalService {
+
+
+
+    @Autowired
+
+    private HospitalRepository hospitalRepository;
+
+
+
+
+
+public List<Hospital> getAllHospitals(){
+
+    List<Hospital> hos = new ArrayList<Hospital>();
+
+    hospitalRepository.findAll().forEach(hos1 -> hos.add(hos1));
+
+    return hos;
+
+}
+
+
+
+public Hospital getHospital(int id){
+
+
+
+    return hospitalRepository.findOne(id);
+
+}
+
+
+
+public void addHospital(Hospital hospital){
+
+hospitalRepository.save(hospital);
+
+}
+
+
+
+public void updateHospital(Hospital hos){
+
+//if(hospitalRepository.findById(hos.getId()).isPresent())
+
+//      {
+
+//  Hospital hospital=hospitalRepository.findById(hos.getId()).get();
+
+//  hospital.setName(hos.getName());
+
+//  hospital.setCity(hos.getCity());
+
+//  hospital.setRating(hos.getRating());
+
+    hospitalRepository.save(hos);
+
+
+
+//      }
+
+
+
+}
+
+
+
+public void deleteHospital(Hospital hospital) {
+
+
+
+hospitalRepository.delete(hospital);
+
+}
+
+}
+
+Hospital.java
+
+package com.example.demo.Hospital;
+
+
+
+import javax.persistence.Entity;
+
+import javax.persistence.GeneratedValue;
+
+import javax.persistence.Id;
+
+
+
+@Entity
+
+public class Hospital {
+
+
+
+  @Id
+
+ 
+
+
+
+      public int getId() {
+
+        return id;
+
+    }
+
+    public Hospital() {
+
+    super();
+
+}
+
+    public void setId(int id) {
+
+        this.id = id;
+
+    }
+
+    public String getName() {
+
+        return name;
+
+    }
+
+    public Hospital(int id, String name, String city, double rating) {
+
+        super();
+
+        this.id = id;
+
+        this.name = name;
+
+        this.city = city;
+
+        this.rating = rating;
+
+    }
+
+    public void setName(String name) {
+
+        this.name = name;
+
+    }
+
+    public String getCity() {
+
+        return city;
+
+    }
+
+    public void setCity(String city) {
+
+        this.city = city;
+
+    }
+
+    public double getRating() {
+
+        return rating;
+
+    }
+
+    public void setRating(double rating) {
+
+        this.rating = rating;
+
+    }
+
+    private int id;
+
+      private String name;
+
+      private String city;
+
+      private double rating;
+
+
+
+
+
+
+
+    }
+
+HospitalRepository.java
+
+
+
+package com.example.demo.Hospital;
+
+
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import org.springframework.data.repository.CrudRepository;
+
+import org.springframework.stereotype.Repository;
+
+
+
+@Repository
+
+public interface HospitalRepository extends JpaRepository<Hospital,Integer>{
+
+
+
+}
+
+application.properties
+
+server.port=8080
+
+spring.jpa.show-sql=true
+
+spring.h2.console.enabled=true
+
+spring.datasource.platform=h2
+
+spring.datasource.url=jdbc:h2:mem:testdb
+
+
+
+data.sql
+
+
+
+insert into hospital values(1,'John','bihar',22);
+
+
+
+
+
+
+
+
+
+6) Consume Public APIs - Try-it-Out
+
+
+
+Reference URL:- Consume a public api for ny times – BytesofGigabytes
+
+
+
+
+
+
