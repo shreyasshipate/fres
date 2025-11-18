@@ -1,50 +1,53 @@
-@PostMapping("/media/upload")
-public ResponseEntity<ImageFile> uploadImage(@RequestParam("file") MultipartFile file,
-                                             @AuthenticationPrincipal UserInfo user) {
-    try {
-        File dir = new File(uploadDir);
-        if (!dir.exists()) dir.mkdirs();
+package com.example.media;
 
-        String fileName = file.getOriginalFilename();
-        String filePath = uploadDir + "/" + fileName;
+import org.json.JSONObject;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
-        // Save the file to local folder
-        File newFile = new File(filePath);
-        file.transferTo(newFile);
+@RestController
+@RequestMapping("/media")
+public class MediaController {
 
-        // Save record in DB
-        ImageFile image = new ImageFile(fileName, file.getContentType(), filePath);
-        image.setUser(user);                          // IMPORTANT → fixes your JSON error
-        ImageFile saved = imageRepo.save(image);
+    private final MediaService mediaService;
 
-        return ResponseEntity.ok(saved);
-
-    } catch (Exception ex) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-    }
-}
-
-
-
-@GetMapping("/media/download/{id}")
-public byte[] downloadImage(@PathVariable int id,
-                            @AuthenticationPrincipal UserInfo user) {
-
-    ImageFile image = imageRepo.findById(id).orElse(null);
-
-    if (image == null) {
-        return "Error Occurred".getBytes();
+    public MediaController(MediaService mediaService) {
+        this.mediaService = mediaService;
     }
 
-    // user must be the owner
-    if (image.getUser() == null || image.getUser().getId() != user.getId()) {
-        return "Error Occurred".getBytes();
+    // ------------------ UPLOAD ------------------
+    @PostMapping("/upload")
+    public ResponseEntity<?> uploadMedia(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal CustomUserDetails user  // your user principal
+    ) throws Exception {
+
+        Integer userId = user.getId();
+
+        Media media = mediaService.saveMedia(file, userId);
+
+        JSONObject json = new JSONObject();
+        json.put("id", media.getId());
+        json.put("filename", media.getFilename());
+        json.put("contentType", media.getContentType());
+        json.put("path", media.getPath());
+        json.put("userId", media.getUserId());
+
+        return ResponseEntity.ok(json.toString());
     }
 
-    try {
-        Path path = Paths.get(image.getPath());
-        return Files.readAllBytes(path);
-    } catch (Exception ex) {
-        return "Error Occurred".getBytes();
+    // ------------------ DOWNLOAD ------------------
+    @GetMapping("/download/{id}")
+    public ResponseEntity<?> download(
+            @PathVariable Integer id,
+            @AuthenticationPrincipal CustomUserDetails user
+    ) throws Exception {
+
+        Integer userId = user.getId();
+
+        byte[] data = mediaService.download(id, userId);
+
+        return ResponseEntity.ok(data);
     }
 }
