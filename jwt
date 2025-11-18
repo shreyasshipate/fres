@@ -1,125 +1,97 @@
-@Component
-public class JwtAuthenticationFilter extends OncePerRequestFilter {
+@RestController
+public class Controller {
 
     @Autowired
-    private JwtService jwtService;
+    private AuthenticationManager authenticationManager;
 
     @Autowired
-    private CustomUserDetailsService userDetailsService;
+    private UserInfoRepository userRepo;
 
-    @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain)
-            throws ServletException, IOException {
+    @Autowired
+    private ImageRepository imageRepo;
 
-        String authHeader = request.getHeader("Authorization");
-        String token = null;
-        String username = null;
+    @Autowired
+    private JwtUtils jwtUtils;
 
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring(7);
-            username = jwtService.extractUsername(token);
+    private final String uploadDir = "src/main/resources/uploads";
+
+    // ---------------------- LOGIN ----------------------
+    @PostMapping("/login")
+    public ResponseEntity<?> authenticateAndGetToken(@RequestBody AuthRequest authRequest) {
+
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(
+                        authRequest.getEmail(),
+                        authRequest.getPassword()
+                )
+        );
+
+        if (authentication.isAuthenticated()) {
+            String token = jwtUtils.generateToken(authRequest.getEmail());
+            return ResponseEntity.ok(Map.of("token", token));
         }
 
-        if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
+    }
 
-            UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+    // ---------------------- UPLOAD ----------------------
+    @PostMapping("/media/upload")
+    public ResponseEntity<ImageFile> uploadImage(@RequestParam("file") MultipartFile file) {
 
-            if (jwtService.isTokenValid(token, userDetails)) {
-                UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(
-                                userDetails,
-                                null,
-                                userDetails.getAuthorities()
-                        );
+        // Create upload directory if not exists
+        File dir = new File(uploadDir);
+        if (!dir.exists()) dir.mkdirs();
 
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authToken);
-            }
+        // Build actual file path
+        String filePath = uploadDir + "/" + file.getOriginalFilename();
+
+        try {
+            // Save file to disk
+            file.transferTo(new File(filePath));
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
 
-        filterChain.doFilter(request, response);
+        // Logged-in user
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        UserInfo user = userRepo.findByEmail(email);
+
+        // Save file metadata to DB
+        ImageFile img = new ImageFile(
+                file.getOriginalFilename(),
+                file.getContentType(),
+                filePath
+        );
+        img.setUser(user);
+
+        ImageFile saved = imageRepo.save(img);
+
+        return ResponseEntity.ok(saved);
+    }
+
+    // ---------------------- DOWNLOAD ----------------------
+    @GetMapping("/media/download/{id}")
+    public byte[] downloadImage(@PathVariable int id) {
+
+        ImageFile image = imageRepo.findById(id).orElse(null);
+        if (image == null) {
+            return "Error Occurred".getBytes();
+        }
+
+        // Logged-in user
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        UserInfo loggedUser = userRepo.findByEmail(email);
+
+        // Only owner can download
+        if (image.getUser().getId() != loggedUser.getId()) {
+            return "Error Occurred".getBytes();
+        }
+
+        try {
+            Path path = Paths.get(image.getPath());
+            return Files.readAllBytes(path);
+        } catch (Exception e) {
+            return "Error Occurred".getBytes();
+        }
     }
 }
-
-
-
-@Configuration
-@EnableWebSecurity
-public class SecurityConfig {
-
-    private final CustomUserDetailsService userDetailsService;
-    private final JwtAuthenticationFilter jwtFilter;
-
-    public SecurityConfig(CustomUserDetailsService userDetailsService,
-                          JwtAuthenticationFilter jwtFilter) {
-        this.userDetailsService = userDetailsService;
-        this.jwtFilter = jwtFilter;
-    }
-
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-
-        http
-                .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/login", "/auth/register").permitAll()
-                        .anyRequest().authenticated()
-                )
-                .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                )
-                .authenticationProvider(authenticationProvider());
-
-        // Add JWT Filter before UsernamePasswordAuthenticationFilter
-        http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
-
-        return http.build();
-    }
-
-    @Bean
-    public AuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
-        provider.setUserDetailsService(userDetailsService);
-        provider.setPasswordEncoder(passwordEncoder());
-        return provider;
-    }
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
-
-    @Bean
-    public AuthenticationManager authenticationManager(
-            AuthenticationConfiguration config) throws Exception {
-        return config.getAuthenticationManager();
-    }
-}
-
-
-@ResponseStatus(HttpStatus.BAD_REQUEST)
-public class BadRequestException extends RuntimeException {
-    public BadRequestException(String message) {
-        super(message);
-    }
-}
-
-
-
-@Override
-public UserDetails loadUserByUsername(String username) {
-
-    UserEntity user = userRepo.findByUsername(username)
-            .orElseThrow(() -> new BadRequestException("User not found with username: " + username));
-
-    return User.withUsername(user.getUsername())
-            .password(user.getPassword())
-            .roles(user.getRole())
-            .build();
-}
-
-
-
-
