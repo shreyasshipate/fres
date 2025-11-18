@@ -1,80 +1,33 @@
-@PostMapping("/media/upload")
-public ResponseEntity<?> uploadImage(@RequestParam("file") MultipartFile file) {
-
-    try {
-
-        // Logged-in user
-        String email = SecurityContextHolder.getContext().getAuthentication().getName();
-        UserInfo user = userRepo.findByEmail(email);
-
-        if (user == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body("User not found");
-        }
-
-        // Create upload directory
-        File dir = new File(uploadDir);
-        if (!dir.exists()) dir.mkdirs();
-
-        // Build file path
-        String filePath = uploadDir + "/" + file.getOriginalFilename();
-
-        // Save file physically
-        file.transferTo(new File(filePath));
-
-        // Save metadata in DB
-        ImageFile img = new ImageFile(
-                file.getOriginalFilename(),
-                file.getContentType(),
-                filePath
-        );
-        img.setUser(user);     // IMPORTANT: test checks this
-
-        ImageFile saved = imageRepo.save(img);
-
-        return ResponseEntity.ok(saved);
-    }
-    catch (Exception ex) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body("Upload failed");
-    }
-}
 @GetMapping("/media/download/{id}")
-public ResponseEntity<?> downloadImage(@PathVariable int id) {
+public ResponseEntity<byte[]> downloadImage(@PathVariable int id) {
 
-    // Check if image exists
     ImageFile image = imageRepo.findById(id).orElse(null);
     if (image == null) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body("Data not found");
+                .body("File not found".getBytes());
     }
 
     // Logged-in user
     String email = SecurityContextHolder.getContext().getAuthentication().getName();
     UserInfo loggedUser = userRepo.findByEmail(email);
 
-    if (loggedUser == null) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body("User not found");
-    }
-
-    // Only owner can download
-    if (!image.getUser().getId().equals(loggedUser.getId())) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body("You are not allowed to download this file");
+    // ❌ If not owner → send 403
+    if (image.getUser().getId() != loggedUser.getId()) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body("Unauthorized".getBytes());
     }
 
     try {
         Path path = Paths.get(image.getPath());
-        byte[] fileBytes = Files.readAllBytes(path);
+        byte[] bytes = Files.readAllBytes(path);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=" + image.getName())
-                .body(fileBytes);
-    }
-    catch (Exception e) {
+                        "attachment; filename=" + image.getFileName())
+                .body(bytes);
+
+    } catch (Exception e) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body("Error while reading file");
+                .body("Error reading file".getBytes());
     }
 }
