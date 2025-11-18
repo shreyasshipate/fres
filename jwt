@@ -1,53 +1,39 @@
-package com.example.media;
 
-import org.json.JSONObject;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
-
-@RestController
-@RequestMapping("/media")
-public class MediaController {
-
-    private final MediaService mediaService;
-
-    public MediaController(MediaService mediaService) {
-        this.mediaService = mediaService;
-    }
-
-    // ------------------ UPLOAD ------------------
-    @PostMapping("/upload")
-    public ResponseEntity<?> uploadMedia(
+ private final List<MediaRecord> mediaStore = new ArrayList<>();
+    private int sequenceId = 1;
+ public ResponseEntity<?> upload(
             @RequestParam("file") MultipartFile file,
-            @AuthenticationPrincipal CustomUserDetails user  // your user principal
-    ) throws Exception {
-
-        Integer userId = user.getId();
-
-        Media media = mediaService.saveMedia(file, userId);
-
-        JSONObject json = new JSONObject();
-        json.put("id", media.getId());
-        json.put("filename", media.getFilename());
-        json.put("contentType", media.getContentType());
-        json.put("path", media.getPath());
-        json.put("userId", media.getUserId());
-
-        return ResponseEntity.ok(json.toString());
-    }
-
-    // ------------------ DOWNLOAD ------------------
-    @GetMapping("/download/{id}")
-    public ResponseEntity<?> download(
-            @PathVariable Integer id,
             @AuthenticationPrincipal CustomUserDetails user
     ) throws Exception {
 
         Integer userId = user.getId();
 
-        byte[] data = mediaService.download(id, userId);
+        // ensure upload directory exists
+        String uploadDir = "src/main/resources/uploads/";
+        new File(uploadDir).mkdirs();
 
-        return ResponseEntity.ok(data);
+        // save file
+        String fullPath = uploadDir + file.getOriginalFilename();
+        Files.copy(file.getInputStream(), Path.of(fullPath), StandardCopyOption.REPLACE_EXISTING);
+
+        // create record
+        MediaRecord record = new MediaRecord(
+                sequenceId++,
+                file.getOriginalFilename(),
+                file.getContentType(),
+                fullPath,
+                userId
+        );
+
+        mediaStore.add(record);
+
+        // build JSON for response
+        JSONObject json = new JSONObject();
+        json.put("id", record.id());
+        json.put("filename", record.filename());
+        json.put("contentType", record.contentType());
+        json.put("path", record.path());
+        json.put("userId", record.userId());
+
+        return ResponseEntity.ok(json.toString());
     }
-}
