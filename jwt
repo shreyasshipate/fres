@@ -1,33 +1,50 @@
+@PostMapping("/media/upload")
+public ResponseEntity<ImageFile> uploadImage(@RequestParam("file") MultipartFile file,
+                                             @AuthenticationPrincipal UserInfo user) {
+    try {
+        File dir = new File(uploadDir);
+        if (!dir.exists()) dir.mkdirs();
+
+        String fileName = file.getOriginalFilename();
+        String filePath = uploadDir + "/" + fileName;
+
+        // Save the file to local folder
+        File newFile = new File(filePath);
+        file.transferTo(newFile);
+
+        // Save record in DB
+        ImageFile image = new ImageFile(fileName, file.getContentType(), filePath);
+        image.setUser(user);                          // IMPORTANT → fixes your JSON error
+        ImageFile saved = imageRepo.save(image);
+
+        return ResponseEntity.ok(saved);
+
+    } catch (Exception ex) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+    }
+}
+
+
+
 @GetMapping("/media/download/{id}")
-public ResponseEntity<byte[]> downloadImage(@PathVariable int id) {
+public byte[] downloadImage(@PathVariable int id,
+                            @AuthenticationPrincipal UserInfo user) {
 
     ImageFile image = imageRepo.findById(id).orElse(null);
+
     if (image == null) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body("File not found".getBytes());
+        return "Error Occurred".getBytes();
     }
 
-    // Logged-in user
-    String email = SecurityContextHolder.getContext().getAuthentication().getName();
-    UserInfo loggedUser = userRepo.findByEmail(email);
-
-    // ❌ If not owner → send 403
-    if (image.getUser().getId() != loggedUser.getId()) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body("Unauthorized".getBytes());
+    // user must be the owner
+    if (image.getUser() == null || image.getUser().getId() != user.getId()) {
+        return "Error Occurred".getBytes();
     }
 
     try {
         Path path = Paths.get(image.getPath());
-        byte[] bytes = Files.readAllBytes(path);
-
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=" + image.getFileName())
-                .body(bytes);
-
-    } catch (Exception e) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body("Error reading file".getBytes());
+        return Files.readAllBytes(path);
+    } catch (Exception ex) {
+        return "Error Occurred".getBytes();
     }
 }
